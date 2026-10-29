@@ -10,8 +10,8 @@
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
     <NoWarn>$(NoWarn);NU1603</NoWarn>
-    <!-- tools/ holds the filter test harness; out/ is build output. Neither belongs in the plugin. -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);tools/**;out/**</DefaultItemExcludes>
+    <!-- tools/ is the filter test harness, out/ is build output, layer/ is the compatibility layer's checkout in CI. None belong in the plugin. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);tools/**;out/**;layer/**</DefaultItemExcludes>
     <GameDirectory Condition="'$(GameDirectory)' == ''">D:/SteamLibrary/steamapps/common/CarX Drift Racing Online 2</GameDirectory>
     <GameInteropDirectory Condition="'$(GameInteropDirectory)' == ''">$(GameDirectory)/BepInEx/interop</GameInteropDirectory>
     <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
