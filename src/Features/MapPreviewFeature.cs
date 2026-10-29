@@ -27,7 +27,8 @@ internal sealed class MapPreviewFeature : IFeature
     private static MapPreviewFeature? _instance;
     private static TextureReplacer _replacer = null!;
 
-    private ConfigEntry<bool> _enabled = null!, _transparentMaterial = null!;
+    private ConfigEntry<bool> _enabled = null!, _transparentMaterial = null!, _useCache = null!;
+    private ConfigEntry<int> _cacheMegabytes = null!;
     private ConfigEntry<float> _backgroundOpacity = null!, _saturationMax = null!, _lightLuminance = null!, _minLuminance = null!;
     private ConfigEntry<string> _background = null!, _asphalt = null!, _concrete = null!, _asphaltEdge = null!, _concreteEdge = null!;
     private ConfigEntry<int> _smoothing = null!, _edgeWidth = null!;
@@ -44,13 +45,17 @@ internal sealed class MapPreviewFeature : IFeature
             new ConfigDescription("0 = scenery fully transparent (like the game's own maps); 1 = scenery drawn as a solid Background colour.", new AcceptableValueRange<float>(0f, 1f)));
         _transparentMaterial = config.Bind(Name, "UseTransparentMaterial", true,
             "Ask the game for its transparent map material so transparent scenery really is see-through. Turn off if the map looks wrong; then use BackgroundOpacity = 1.");
+        _useCache = config.Bind(Name, "UseCache", true,
+            "Keep redrawn previews on disk (BepInEx/cache/MapManager) so a map whose picture has not changed is not redrawn, even after a restart.");
+        _cacheMegabytes = config.Bind(Name, "CacheSizeMegabytes", 200,
+            new ConfigDescription("Most disk space the preview cache may use; the least recently used entries are deleted first.", new AcceptableValueRange<int>(10, 2000)));
         _background = config.Bind(Name, "Background", d.Background.ToString(), "Colour of scenery when BackgroundOpacity is above 0, as #RRGGBB.");
         _asphalt = config.Bind(Name, "Asphalt", d.Asphalt.ToString(), "Fill of dark road surfaces, as #RRGGBB.");
         _concrete = config.Bind(Name, "Concrete", d.Concrete.ToString(), "Fill of light surfaces and buildings, as #RRGGBB.");
         _asphaltEdge = config.Bind(Name, "AsphaltEdge", d.AsphaltEdge.ToString(), "Outline of dark road surfaces, as #RRGGBB.");
         _concreteEdge = config.Bind(Name, "ConcreteEdge", d.ConcreteEdge.ToString(), "Outline of light surfaces and buildings, as #RRGGBB.");
         _saturationMax = config.Bind(Name, "SurfaceSaturationMax", d.SurfaceSaturationMax,
-            new ConfigDescription("Pixels more colourful than this count as scenery, greyer ones as road/buildings.", new AcceptableValueRange<float>(0f, 1f)));
+            new ConfigDescription("Pixels more colourful than this count as scenery, greyer ones as road/buildings. 0 = work it out from each map's own colours (recommended).", new AcceptableValueRange<float>(0f, 1f)));
         _lightLuminance = config.Bind(Name, "LightSurfaceLuminance", d.LightSurfaceLuminance,
             new ConfigDescription("Surfaces darker than this are asphalt, brighter ones concrete/buildings.", new AcceptableValueRange<float>(0f, 1f)));
         _minLuminance = config.Bind(Name, "MinSurfaceLuminance", d.MinSurfaceLuminance,
@@ -64,7 +69,12 @@ internal sealed class MapPreviewFeature : IFeature
     public bool Install(Harmony harmony, ManualLogSource log)
     {
         _instance = this;
-        _replacer = new TextureReplacer(log, "MAPMANAGER_PREVIEW", (rgba, width, height) => SchematicFilter.Apply(rgba, width, height, BuildStyle()));
+        string cacheDirectory = Path.Combine(BepInEx.Paths.CachePath, "MapManager");
+        _replacer = new TextureReplacer(log, "MAPMANAGER_PREVIEW",
+            (rgba, width, height) => SchematicFilter.Apply(rgba, width, height, BuildStyle()),
+            cache: () => _useCache.Value
+                ? new TextureCacheOptions(cacheDirectory, SettingsKey(), _cacheMegabytes.Value * 1024L * 1024L)
+                : null);
         const System.Reflection.BindingFlags Hook = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
         int installed = 0;
 
@@ -105,6 +115,15 @@ internal sealed class MapPreviewFeature : IFeature
         {
             Plugin.Logger.LogError($"MAPMANAGER_PREVIEW_FAILED — {exception}");
         }
+    }
+
+    /// <summary>Everything besides the picture that changes the result; part of the cache key, so editing a setting re-renders.</summary>
+    private string SettingsKey()
+    {
+        SchematicStyle style = BuildStyle();
+        return string.Join("|", $"algorithm={SchematicFilter.Algorithm}", style.Background, style.Asphalt, style.Concrete, style.AsphaltEdge,
+            style.ConcreteEdge, style.BackgroundOpacity.ToString("R"), style.SurfaceSaturationMax.ToString("R"),
+            style.LightSurfaceLuminance.ToString("R"), style.MinSurfaceLuminance.ToString("R"), style.SmoothingPasses, style.EdgeWidth);
     }
 
     private SchematicStyle BuildStyle() => new()

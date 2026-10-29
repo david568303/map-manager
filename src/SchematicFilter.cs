@@ -30,8 +30,14 @@ public sealed class SchematicStyle
     /// </summary>
     public float BackgroundOpacity { get; set; }
 
-    /// <summary>Pixels more colourful than this (grass, dirt, water) are scenery; greyer pixels are surfaces. 0..1.</summary>
-    public float SurfaceSaturationMax { get; set; } = 0.16f;
+    /// <summary>
+    /// Pixels more colourful than this (grass, dirt, water) are scenery; greyer pixels are surfaces. 0..1.
+    /// 0 (the default) picks the cut-off for each picture from its own colours, between <see cref="AutoSaturationMin"/>
+    /// and <see cref="AutoSaturationMax"/>.
+    /// </summary>
+    public float SurfaceSaturationMax { get; set; }
+    public const float AutoSaturationMin = 0.14f;
+    public const float AutoSaturationMax = 0.24f;
     /// <summary>Surface pixels darker than this are asphalt, brighter are concrete / buildings. 0..1.</summary>
     public float LightSurfaceLuminance { get; set; } = 0.42f;
     /// <summary>Surface pixels darker than this are treated as shadow/void, not road. 0..1.</summary>
@@ -57,8 +63,12 @@ public sealed class SchematicStyle
 /// </summary>
 public static class SchematicFilter
 {
+    /// <summary>Bump whenever the filter's output changes, so cached results from an older algorithm are not reused.</summary>
+    public const int Algorithm = 4;
+
     private const byte Scenery = 0, Asphalt = 1, Concrete = 2;
     private const float GaussianPeak = 2.5066283f; // sqrt(2 * pi)
+    private const float LightSurfaceSaturationMax = 0.14f;
 
     /// <summary>Input and output are tightly packed RGBA, row-major, row 0 first.</summary>
     public static byte[] Apply(byte[] rgba, int width, int height, SchematicStyle? style = null)
@@ -100,16 +110,59 @@ public static class SchematicFilter
         BoxBlur(luminance, width, height, blurRadius, passes: 1);
         BoxBlur(saturation, width, height, blurRadius, passes: 1);
 
+        float saturationMax = style.SurfaceSaturationMax > 0f
+            ? style.SurfaceSaturationMax
+            : AutoSaturationCutoff(saturation, luminance, style.MinSurfaceLuminance);
+
         var cls = new byte[n];
         Parallel.For(0, height, y =>
         {
             for (int i = y * width, end = i + width; i < end; i++)
             {
-                if (saturation[i] >= style.SurfaceSaturationMax || luminance[i] <= style.MinSurfaceLuminance) cls[i] = Scenery;
+                // Dark roads (asphalt, dirt tracks) are only slightly less colourful than dry grass, so they need the
+                // generous cut-off. Light surfaces (concrete, buildings) are clearly grey, and their soft edges that fade
+                // into the grass would turn ragged under it, so they get a stricter one.
+                float limit = luminance[i] >= style.LightSurfaceLuminance ? Math.Min(saturationMax, LightSurfaceSaturationMax) : saturationMax;
+                if (saturation[i] >= limit || luminance[i] <= style.MinSurfaceLuminance) cls[i] = Scenery;
                 else cls[i] = luminance[i] < style.LightSurfaceLuminance ? Asphalt : Concrete;
             }
         });
         return cls;
+    }
+
+    /// <summary>
+    /// Otsu's method on the saturation histogram: the cut-off that best separates "grey" (roads, buildings) from
+    /// "colourful" (vegetation), limited to a sane range so an unusual map cannot swing it too far.
+    /// </summary>
+    private static float AutoSaturationCutoff(float[] saturation, float[] luminance, float minLuminance)
+    {
+        const int Bins = 64;
+        var histogram = new long[Bins];
+        long total = 0;
+        for (int i = 0; i < saturation.Length; i++)
+        {
+            if (luminance[i] <= minLuminance) continue;
+            histogram[Math.Min(Bins - 1, (int)(saturation[i] * Bins))]++;
+            total++;
+        }
+        if (total == 0) return 0.5f * (SchematicStyle.AutoSaturationMin + SchematicStyle.AutoSaturationMax);
+
+        double sumAll = 0;
+        for (int b = 0; b < Bins; b++) sumAll += b * (double)histogram[b];
+        double sumBelow = 0, best = -1;
+        long below = 0;
+        int bestBin = 0;
+        for (int b = 0; b < Bins; b++)
+        {
+            below += histogram[b];
+            if (below == 0 || below == total) continue;
+            sumBelow += b * (double)histogram[b];
+            double meanBelow = sumBelow / below, meanAbove = (sumAll - sumBelow) / (total - below);
+            double between = (double)below * (total - below) * (meanBelow - meanAbove) * (meanBelow - meanAbove);
+            if (between > best) { best = between; bestBin = b; }
+        }
+        float cutoff = (bestBin + 1f) / Bins;
+        return Math.Clamp(cutoff, SchematicStyle.AutoSaturationMin, SchematicStyle.AutoSaturationMax);
     }
 
     // ---- 2. clean-up -------------------------------------------------------------------------------------------
@@ -195,7 +248,7 @@ public static class SchematicFilter
         // Two scales. A light blur keeps thin trails and decides asphalt vs concrete. A heavy blur gives wide roads
         // and buildings their smooth outline, because it averages out the wobble in the source picture's edges.
         int fine = (int)Math.Round(radius);
-        int heavy = fine > 0 ? fine * 2 + 1 : 0;
+        int heavy = fine > 0 ? fine + 2 : 0;
         if (fine > 0)
         {
             BoxBlur(asphalt, width, height, fine, passes: 3);
@@ -204,17 +257,24 @@ public static class SchematicFilter
         }
 
         // Shape = wide parts (heavy blur says "mostly road here") plus thin parts (the fine blur sees a road that the
-        // heavy blur smeared away). The difference test keeps the bumps beside a wide road out of the thin set.
+        // heavy blur smeared away). A thin part is only taken where there is no wide part within a few pixels, so the
+        // little bumps along the edge of a wide road are not added back; only free-standing trails are.
+        var wide = new float[n];
+        Parallel.For(0, height, y =>
+        {
+            for (int i = y * width, end = i + width; i < end; i++) wide[i] = surface[i] >= 0.5f ? 1f : 0f;
+        });
+        var nearWide = (float[])wide.Clone();
+        BoxBlur(nearWide, width, height, Math.Max(2, fine + 1), passes: 1);
+
         var shape = new float[n];
         Parallel.For(0, height, y =>
         {
             for (int i = y * width, end = i + width; i < end; i++)
             {
                 float fineCover = Math.Min(1f, asphalt[i] + concrete[i]);
-                float heavyCover = surface[i];
-                bool wide = heavyCover >= 0.5f;
-                bool thin = fineCover >= 0.45f && fineCover - heavyCover > 0.1f;
-                shape[i] = wide || thin ? 1f : 0f;
+                bool thin = fineCover >= 0.45f && nearWide[i] < 0.001f;
+                shape[i] = wide[i] > 0f || thin ? 1f : 0f;
             }
         });
         // A last small blur only anti-aliases the (already smooth) outline; it is the same everywhere, so every edge
