@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>MapManager</AssemblyName>
+    <Version>0.1.0</Version>
+    <RootNamespace>MapManager</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <NoWarn>$(NoWarn);NU1603</NoWarn>
+    <!-- tools/ holds the filter test harness; out/ is build output. Neither belongs in the plugin. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);tools/**;out/**</DefaultItemExcludes>
+    <GameDirectory Condition="'$(GameDirectory)' == ''">D:/SteamLibrary/steamapps/common/CarX Drift Racing Online 2</GameDirectory>
+    <GameInteropDirectory Condition="'$(GameInteropDirectory)' == ''">$(GameDirectory)/BepInEx/interop</GameInteropDirectory>
+    <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.791" PrivateAssets="all" />
+    <Reference Include="$(GameInteropDirectory)/*.dll" Private="false" />
+  </ItemGroup>
+  <!-- -p:DeployToGame=true copies MapManager.dll to BepInEx/plugins/MapManager. Ignored if the game has it locked. -->
+  <Target Name="DeployToGameFolder" AfterTargets="Build" Condition="'$(DeployToGame)' == 'true' And Exists('$(GameDirectory)/BepInEx/plugins')">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(GameDirectory)/BepInEx/plugins/MapManager" ContinueOnError="true" />
+  </Target>
+</Project>

@@ -1,0 +1,23 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Filter self-test
+        run: dotnet run --project tools/FilterPreview -c Release -- --selftest
+
+      - name: Build plugin
+        run: dotnet build MapManager.csproj -c Release -o out
