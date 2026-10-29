@@ -15,10 +15,16 @@
     <GameDirectory Condition="'$(GameDirectory)' == ''">D:/SteamLibrary/steamapps/common/CarX Drift Racing Online 2</GameDirectory>
     <GameInteropDirectory Condition="'$(GameInteropDirectory)' == ''">$(GameDirectory)/BepInEx/interop</GameInteropDirectory>
     <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
+    <!-- The compatibility layer (carx.modmanager) supplies SafePatch, TextureTools and MainThread. -->
+    <CompatLayerDll Condition="'$(CompatLayerDll)' == ''">$(GameDirectory)/BepInEx/plugins/CarXModManager/CarXModManager.dll</CompatLayerDll>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.791" PrivateAssets="all" />
     <Reference Include="$(GameInteropDirectory)/*.dll" Private="false" />
+    <Reference Include="CarXModManager">
+      <HintPath>$(CompatLayerDll)</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
   <!-- -p:DeployToGame=true copies MapManager.dll to BepInEx/plugins/MapManager. Ignored if the game has it locked. -->
   <Target Name="DeployToGameFolder" AfterTargets="Build" Condition="'$(DeployToGame)' == 'true' And Exists('$(GameDirectory)/BepInEx/plugins')">

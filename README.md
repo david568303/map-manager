@@ -1,55 +1,68 @@
 # Map Manager (dev builds)
 
-A BepInEx 6 IL2CPP mod for **CarX Drift Racing Online 2** that makes custom (mod.io) maps look right in the game's
-map preview.
+A BepInEx 6 IL2CPP mod for **CarX Drift Racing Online 2** with tools for working with custom (mod.io) maps. It is
+built from independent **features**; each has its own config section and Enabled switch, so features can be added,
+switched off or fail without affecting the others. Versions are not bumped for dev builds; the log carries the commit
+hash instead.
 
-**The problem:** the game's own maps show a clean schematic in the map selection screen (dark background, roads and
-surfaces outlined in grey). A custom map has no such schematic, so the game shows a top-down picture of the terrain:
-all green, with the circuit hard to read.
+Game-wide helpers (safe patching, texture access, main-thread work) come from the
+[compatibility layer](https://github.com/david568303/Dro2-compatibility-layer), which this mod requires. The release
+zip contains both.
 
-**The fix:** take that top-down picture and redraw it as the same kind of schematic: scenery (grass, dirt, water)
-becomes the dark background; greyer pixels are surfaces, dark ones as asphalt and light ones as concrete/buildings;
-each surface gets a light outline.
+## Features
 
-## Status
+### MapPreview - schematic previews for custom maps
 
-| Part | State |
-|---|---|
-| Schematic filter (`src/SchematicFilter.cs`) | Done and tested off-line on a real custom-map screenshot |
-| Config switch + colour/threshold settings | Done |
-| Hook into the game's map preview | **Not done**: needs the game's map-preview classes (found from the interop assemblies) |
+The game's own maps show a clean schematic in the map selection screen (dark background, roads and surfaces
+outlined in grey). A custom map ships only a top-down picture of the terrain, which the game shows as-is: all green,
+with the circuit hard to read.
 
-The plugin loads and reads its config but does not change anything in the game yet.
+This feature redraws that picture in the same kind of schematic: scenery (grass, dirt, water) becomes the dark
+background; greyer pixels are surfaces, dark ones as asphalt and light ones as concrete/buildings; each surface gets
+a light outline.
 
-## Turning it off
+How: `ModWorldMapTrack.Build(modId, ModMinimapMeta, Texture2D)` receives the picture. A Harmony prefix copies its
+pixels out, the filter (`src/SchematicFilter.cs`, plain image code, tested off-line) runs on a background thread, and
+the result is written back into the same texture on the main thread.
 
-`BepInEx/config/carx.mapmanager.cfg` (created on first launch):
+Known limits of this first version: the preview shows the green picture for a moment before it switches to the
+schematic; only textures with Read/Write enabled are handled (anything else is logged as
+`MAPMANAGER_PREVIEW_UNREADABLE`); only the world-map preview is hooked, not the flat in-menu minimap.
+
+## Config
+
+`BepInEx/config/carx.mapmanager.cfg`, created on first launch:
 
 ```ini
 [General]
-Enabled = true   # false = the game is left exactly as it is without this mod
+Enabled = true      # false = nothing is installed; the game behaves exactly as without this mod
+
+[MapPreview]
+Enabled = true      # false = custom maps keep the game's normal green preview
+# ...plus the colours (#RRGGBB) and thresholds that decide what counts as road, to tune the look without rebuilding
 ```
 
-The `[Schematic]` section holds the colours (`#RRGGBB`) and the thresholds that decide what counts as road, so the
-look can be tuned without rebuilding.
+## Install
 
-## Trying the filter off-line
+Download `MapManager.zip` from the **latest** pre-release and extract it into the game folder. It adds
+`BepInEx/plugins/MapManager` and `BepInEx/plugins/CarXModManager` (the compatibility layer).
 
-```bash
-dotnet run --project tools/FilterPreview -- --selftest
-dotnet run --project tools/FilterPreview -- in.rgba out.rgba   # raw file: int32 width, int32 height, RGBA bytes
-```
+In `BepInEx/LogOutput.log`, look for `MAPMANAGER_LOADED` (with `MapPreview: on`), then `MAPMANAGER_PREVIEW_START` and
+`MAPMANAGER_PREVIEW_DONE` when a custom map's preview is opened. A hook that could not be installed (for example
+after a game update moves the method) is logged as an Error, which also shows up in the layer's bottom-left status
+line.
 
 ## Build
 
 ```bash
-dotnet build -c Release                                   # DLL in bin/Release/net6.0
-dotnet build -c Release -p:DeployToGame=true              # also copies it to BepInEx/plugins/MapManager
+dotnet build -c Release                           # needs the game's BepInEx folder (interop + the compatibility layer)
+dotnet build -c Release -p:DeployToGame=true      # also copies MapManager.dll to BepInEx/plugins/MapManager
+dotnet run --project tools/FilterPreview -- --selftest
+dotnet run --project tools/FilterPreview -- in.rgba out.rgba   # raw file: int32 width, int32 height, RGBA bytes
 ```
 
-## Sharing code with the compatibility layer
+## Adding a feature
 
-Anything game-wide that another mod could also use (reading pixels back from a texture, safe Harmony patching,
-reporting errors to the status line) belongs in
-[Dro2-compatibility-layer](https://github.com/david568303/Dro2-compatibility-layer) and is called from here.
-Map-specific code (this filter, the map-preview hook) stays in this repo.
+Implement `IFeature` (`src/Features/`), bind its config in `BindConfig`, install its hooks in `Install` (use
+`SafePatch.TryPatch` so failures are logged as errors under this mod's name), and add it to the `Features` list in
+`src/Plugin.cs`.

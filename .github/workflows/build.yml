@@ -6,11 +6,20 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The compatibility layer is public; build it from source so this mod always compiles against its current API.
+      - uses: actions/checkout@v4
+        with:
+          repository: david568303/Dro2-compatibility-layer
+          path: layer
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -19,5 +28,44 @@ jobs:
       - name: Filter self-test
         run: dotnet run --project tools/FilterPreview -c Release -- --selftest
 
-      - name: Build plugin
-        run: dotnet build MapManager.csproj -c Release -o out
+      # The game's interop assemblies cannot be published, so compile against the layer's stand-ins that carry the
+      # same assembly names and member shapes; the DLLs bind to the real ones inside the game.
+      - name: Build compatibility layer
+        run: |
+          for p in Core/UnityEngine.CoreModule Imgui/UnityEngine.IMGUIModule; do
+            dotnet build "layer/ci/UnityStubs/$p.csproj" -c Release -o layer/ci/stubs-out
+          done
+          dotnet build layer/CarXModManager.csproj -c Release -o layer/out \
+            -p:UseBepInExPackages=true \
+            -p:GameInteropDirectory="$GITHUB_WORKSPACE/layer/ci/stubs-out"
+
+      - name: Build Map Manager
+        run: >
+          dotnet build MapManager.csproj -c Release -o out
+          -p:SourceRevisionId="$GITHUB_SHA"
+          -p:GameInteropDirectory="$GITHUB_WORKSPACE/layer/ci/stubs-out"
+          -p:CompatLayerDll="$GITHUB_WORKSPACE/layer/out/CarXModManager.dll"
+
+      # One zip that installs both: Map Manager needs the compatibility layer next to it.
+      - name: Package
+        run: |
+          mkdir -p package/BepInEx/plugins/MapManager package/BepInEx/plugins/CarXModManager
+          cp out/MapManager.dll package/BepInEx/plugins/MapManager/
+          cp layer/out/CarXModManager.dll package/BepInEx/plugins/CarXModManager/
+          (cd package && zip -r ../MapManager.zip BepInEx)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MapManager
+          path: MapManager.zip
+
+      - name: Publish rolling release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest MapManager.zip \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "Map Manager (dev build, not yet tested in-game)" \
+            --notes "Dev build from $GITHUB_SHA, compiled against stand-in game assemblies, so the calls into the game are unverified until it runs in the game. Extract MapManager.zip into the game folder: it contains Map Manager and the compatibility layer it needs (BepInEx/plugins/MapManager and BepInEx/plugins/CarXModManager). Launch, open a custom map's preview, then check BepInEx/LogOutput.log for MAPMANAGER_LOADED and MAPMANAGER_PREVIEW_START / MAPMANAGER_PREVIEW_DONE."
