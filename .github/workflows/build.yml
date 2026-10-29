@@ -63,10 +63,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Keep exactly one release: remove every existing one (and its tag), then publish 0.1-alpha.
-          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
-            gh release delete "$tag" --cleanup-tag --yes
-          done
+          # Replace only this build's own release (0.1-alpha); no other release is touched.
+          gh release delete 0.1-alpha --cleanup-tag --yes || true
           gh release create 0.1-alpha MapManager.zip \
             --target "$GITHUB_SHA" --prerelease \
             --title "Map Manager 0.1-alpha" \
