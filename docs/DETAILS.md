@@ -23,13 +23,19 @@ This feature redraws that picture in the same kind of schematic: scenery (grass,
 background; greyer pixels are surfaces, dark ones as asphalt and light ones as concrete/buildings; each surface gets
 a light outline.
 
-How: `ModWorldMapTrack.Build(modId, ModMinimapMeta, Texture2D)` receives the picture. A Harmony prefix copies its
-pixels out, the filter (`src/SchematicFilter.cs`, plain image code, tested off-line) runs on a background thread, and
-the result is written back into the same texture on the main thread.
+Buildings and pads are drawn with straight edges only: a clean rectangle becomes an exact rectangle, a round one a
+perfect circle, anything else a polygon of straight segments. Buildings that touch are told apart and get a thin
+seam between them. Roads keep smooth, anti-aliased outlines.
 
-Known limits of this first version: the preview shows the green picture for a moment before it switches to the
-schematic; only textures with Read/Write enabled are handled (anything else is logged as
-`MAPMANAGER_PREVIEW_UNREADABLE`); only the world-map preview is hooked, not the flat in-menu minimap.
+How: `ModWorldMapTrack.Build(modId, ModMinimapMeta, Texture2D)` receives the picture. A Harmony prefix copies its
+pixels out (through the GPU when the texture is not readable), the filter (`src/SchematicFilter.cs`, plain image
+code, tested off-line) redraws them, and the game gets the redrawn texture before it ever uses the original, so the
+green picture is not shown. The result is cached on disk (`BepInEx/cache/MapManager`), keyed by the picture's
+SHA-256 and the settings, so an unchanged map is not redrawn.
+
+Known limits: only the world-map preview is hooked, not the flat in-menu minimap; whether the game's transparent
+material makes the scenery see-through is not yet confirmed in-game (set `UseTransparentMaterial = false` and
+`BackgroundOpacity = 1` if the map looks wrong).
 
 ## Config
 
