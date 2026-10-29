@@ -8,7 +8,7 @@ hash instead.
 ## Requires the compatibility layer
 
 Map Manager **requires** the [Dro2-compatibility-layer](https://github.com/david568303/Dro2-compatibility-layer),
-a separate mod with its own release. Install its latest release as well; without it BepInEx will not load Map
+a separate mod with its own release. Install its 0.1-alpha release as well; without it BepInEx will not load Map
 Manager. Game-wide helpers (safe patching, texture access, main-thread work) come from it.
 
 ## Features
@@ -46,9 +46,9 @@ Enabled = true      # false = custom maps keep the game's normal green preview
 
 ## Install
 
-1. Install the [compatibility layer](https://github.com/david568303/Dro2-compatibility-layer/releases/tag/latest)
+1. Install the [compatibility layer](https://github.com/david568303/Dro2-compatibility-layer/releases/tag/0.1-alpha)
    (its `CarXModManager.zip`) into the game folder.
-2. Download `MapManager.zip` from this repo's **latest** pre-release and extract it into the game folder too. It adds
+2. Download `MapManager.zip` from this repo's **0.1-alpha** pre-release and extract it into the game folder too. It adds
    only `BepInEx/plugins/MapManager`.
 
 In `BepInEx/LogOutput.log`, look for `MAPMANAGER_LOADED` (with `MapPreview: on`), then `MAPMANAGER_PREVIEW_START` and

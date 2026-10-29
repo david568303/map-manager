@@ -58,13 +58,16 @@ jobs:
           name: MapManager
           path: MapManager.zip
 
-      - name: Publish rolling release
+      - name: Publish release
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete latest --cleanup-tag --yes || true
-          gh release create latest MapManager.zip \
+          # Keep exactly one release: remove every existing one (and its tag), then publish 0.1-alpha.
+          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
+            gh release delete "$tag" --cleanup-tag --yes
+          done
+          gh release create 0.1-alpha MapManager.zip \
             --target "$GITHUB_SHA" --prerelease \
-            --title "Map Manager (dev build, not yet tested in-game)" \
-            --notes "Dev build from $GITHUB_SHA, compiled against stand-in game assemblies, so the calls into the game are unverified until it runs in the game. REQUIRES the compatibility layer (https://github.com/david568303/Dro2-compatibility-layer, install its latest release too). Extract MapManager.zip into the game folder (it contains BepInEx/plugins/MapManager/MapManager.dll). Launch, open a custom map preview, then check BepInEx/LogOutput.log for MAPMANAGER_LOADED and MAPMANAGER_PREVIEW_START / MAPMANAGER_PREVIEW_DONE."
+            --title "Map Manager 0.1-alpha" \
+            --notes "Dev build from $GITHUB_SHA, not yet tested in-game (compiled against stand-in game assemblies). REQUIRES the compatibility layer: https://github.com/david568303/Dro2-compatibility-layer (install its 0.1-alpha release too). Extract MapManager.zip into the game folder (it contains BepInEx/plugins/MapManager/MapManager.dll). Launch, open a custom map preview, then check BepInEx/LogOutput.log for MAPMANAGER_LOADED and MAPMANAGER_PREVIEW_START / MAPMANAGER_PREVIEW_DONE."
