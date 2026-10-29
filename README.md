@@ -5,9 +5,11 @@ built from independent **features**; each has its own config section and Enabled
 switched off or fail without affecting the others. Versions are not bumped for dev builds; the log carries the commit
 hash instead.
 
-Game-wide helpers (safe patching, texture access, main-thread work) come from the
-[compatibility layer](https://github.com/david568303/Dro2-compatibility-layer), which this mod requires. The release
-zip contains both.
+## Requires the compatibility layer
+
+Map Manager **requires** the [Dro2-compatibility-layer](https://github.com/david568303/Dro2-compatibility-layer),
+a separate mod with its own release. Install its latest release as well; without it BepInEx will not load Map
+Manager. Game-wide helpers (safe patching, texture access, main-thread work) come from it.
 
 ## Features
 
@@ -44,8 +46,10 @@ Enabled = true      # false = custom maps keep the game's normal green preview
 
 ## Install
 
-Download `MapManager.zip` from the **latest** pre-release and extract it into the game folder. It adds
-`BepInEx/plugins/MapManager` and `BepInEx/plugins/CarXModManager` (the compatibility layer).
+1. Install the [compatibility layer](https://github.com/david568303/Dro2-compatibility-layer/releases/tag/latest)
+   (its `CarXModManager.zip`) into the game folder.
+2. Download `MapManager.zip` from this repo's **latest** pre-release and extract it into the game folder too. It adds
+   only `BepInEx/plugins/MapManager`.
 
 In `BepInEx/LogOutput.log`, look for `MAPMANAGER_LOADED` (with `MapPreview: on`), then `MAPMANAGER_PREVIEW_START` and
 `MAPMANAGER_PREVIEW_DONE` when a custom map's preview is opened. A hook that could not be installed (for example
@@ -55,7 +59,7 @@ line.
 ## Build
 
 ```bash
-dotnet build -c Release                           # needs the game's BepInEx folder (interop + the compatibility layer)
+dotnet build -c Release                           # needs the game's BepInEx folder (interop + the installed compatibility layer)
 dotnet build -c Release -p:DeployToGame=true      # also copies MapManager.dll to BepInEx/plugins/MapManager
 dotnet run --project tools/FilterPreview -- --selftest
 dotnet run --project tools/FilterPreview -- in.rgba out.rgba   # raw file: int32 width, int32 height, RGBA bytes

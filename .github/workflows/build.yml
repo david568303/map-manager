@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The compatibility layer is public; build it from source so this mod always compiles against its current API.
+      # The compatibility layer is public; build it from source (for compiling only, it is not shipped here) so this mod always compiles against its current API.
       - uses: actions/checkout@v4
         with:
           repository: david568303/Dro2-compatibility-layer
@@ -46,12 +46,11 @@ jobs:
           -p:GameInteropDirectory="$GITHUB_WORKSPACE/layer/ci/stubs-out"
           -p:CompatLayerDll="$GITHUB_WORKSPACE/layer/out/CarXModManager.dll"
 
-      # One zip that installs both: Map Manager needs the compatibility layer next to it.
+      # Map Manager only. It needs the compatibility layer at run time, but that is its own mod with its own release.
       - name: Package
         run: |
-          mkdir -p package/BepInEx/plugins/MapManager package/BepInEx/plugins/CarXModManager
+          mkdir -p package/BepInEx/plugins/MapManager
           cp out/MapManager.dll package/BepInEx/plugins/MapManager/
-          cp layer/out/CarXModManager.dll package/BepInEx/plugins/CarXModManager/
           (cd package && zip -r ../MapManager.zip BepInEx)
 
       - uses: actions/upload-artifact@v4
@@ -68,4 +67,4 @@ jobs:
           gh release create latest MapManager.zip \
             --target "$GITHUB_SHA" --prerelease \
             --title "Map Manager (dev build, not yet tested in-game)" \
-            --notes "Dev build from $GITHUB_SHA, compiled against stand-in game assemblies, so the calls into the game are unverified until it runs in the game. Extract MapManager.zip into the game folder: it contains Map Manager and the compatibility layer it needs (BepInEx/plugins/MapManager and BepInEx/plugins/CarXModManager). Launch, open a custom map's preview, then check BepInEx/LogOutput.log for MAPMANAGER_LOADED and MAPMANAGER_PREVIEW_START / MAPMANAGER_PREVIEW_DONE."
+            --notes "Dev build from $GITHUB_SHA, compiled against stand-in game assemblies, so the calls into the game are unverified until it runs in the game. REQUIRES the compatibility layer (https://github.com/david568303/Dro2-compatibility-layer, install its latest release too). Extract MapManager.zip into the game folder (it contains BepInEx/plugins/MapManager/MapManager.dll). Launch, open a custom map preview, then check BepInEx/LogOutput.log for MAPMANAGER_LOADED and MAPMANAGER_PREVIEW_START / MAPMANAGER_PREVIEW_DONE."
