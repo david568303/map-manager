@@ -64,7 +64,7 @@ public sealed class SchematicStyle
 public static class SchematicFilter
 {
     /// <summary>Bump whenever the filter's output changes, so cached results from an older algorithm are not reused.</summary>
-    public const int Algorithm = 4;
+    public const int Algorithm = 5;
 
     private const byte Scenery = 0, Asphalt = 1, Concrete = 2;
     private const float GaussianPeak = 2.5066283f; // sqrt(2 * pi)
@@ -86,7 +86,7 @@ public static class SchematicFilter
         RemoveSmallRegions(cls, width, height, Asphalt | Concrete, Math.Max(24, n / 6000), onlyInterior: true); // holes in roads
 
         double radius = Math.Max(0.0, style.SmoothingPasses * unit);
-        return Render(cls, width, height, style, radius, style.EdgeWidth > 0 ? style.EdgeWidth : Math.Max(2.4, 1.6 * unit));
+        return Render(cls, width, height, style, radius, style.EdgeWidth > 0 ? style.EdgeWidth : Math.Max(2.4, 1.6 * unit), unit);
     }
 
     // ---- 1. classification -------------------------------------------------------------------------------------
@@ -229,7 +229,7 @@ public static class SchematicFilter
 
     // ---- 3 + 4. smoothing and drawing --------------------------------------------------------------------------
 
-    private static byte[] Render(byte[] cls, int width, int height, SchematicStyle style, double radius, double edgePixels)
+    private static byte[] Render(byte[] cls, int width, int height, SchematicStyle style, double radius, double edgePixels, double unit)
     {
         int n = width * height;
         var asphalt = new float[n];
@@ -273,20 +273,22 @@ public static class SchematicFilter
             for (int i = y * width, end = i + width; i < end; i++)
             {
                 float fineCover = Math.Min(1f, asphalt[i] + concrete[i]);
-                bool thin = fineCover >= 0.45f && nearWide[i] < 0.001f;
+                // 0.35 rather than 0.5: free-standing thin roads get a little extra body so they read as roads, not hairlines.
+                bool thin = fineCover >= 0.35f && nearWide[i] < 0.001f;
                 shape[i] = wide[i] > 0f || thin ? 1f : 0f;
             }
         });
         // A last small blur only anti-aliases the (already smooth) outline; it is the same everywhere, so every edge
-        // gets the same crisp width.
-        const int AntiAliasRadius = 1;
-        BoxBlur(shape, width, height, AntiAliasRadius, passes: 2);
-        double sigma = Math.Sqrt(2.0 * ((2.0 * AntiAliasRadius + 1) * (2.0 * AntiAliasRadius + 1) - 1) / 12.0);
+        // gets the same crisp width. It grows with the picture, so the outline keeps the same look at any resolution.
+        int antiAliasRadius = Math.Clamp((int)Math.Round(unit * 0.8), 1, 8);
+        BoxBlur(shape, width, height, antiAliasRadius, passes: 2);
+        double sigma = Math.Sqrt(2.0 * ((2.0 * antiAliasRadius + 1) * (2.0 * antiAliasRadius + 1) - 1) / 12.0);
 
-        // Slope of the blurred edge at 0.5, per pixel. It turns "N pixels" into a coverage width.
+        // Slope of the blurred edge at 0.5, per pixel. It turns "N pixels" into a coverage width. The outline band is
+        // capped well below the whole 0..1 range, or on a large picture it would swallow the scenery too.
         float slope = (float)(1.0 / (sigma * GaussianPeak));
         float aa = Math.Max(0.5f * slope, 0.02f);                 // anti-aliasing half-width, about one pixel
-        float outline = Math.Max(0.5f * (float)edgePixels * slope, aa);
+        float outline = Math.Clamp(0.5f * (float)edgePixels * slope, aa, 0.4f);
         float bgOpacity = Math.Clamp(style.BackgroundOpacity, 0f, 1f);
 
         var output = new byte[n * 4];

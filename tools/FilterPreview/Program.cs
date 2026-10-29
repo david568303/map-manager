@@ -95,6 +95,17 @@ static int SelfTest()
     if (At(cleaned, 20, 80).Alpha != 0) failures.Add("a one-pixel speck of road in the grass should be removed");
     if (At(cleaned, 70, 48) != (style.Asphalt, (byte)255)) failures.Add($"a one-pixel hole in the road should be filled, got {At(cleaned, 70, 48)}");
 
+    // Large pictures: outline width used to be able to swallow the whole picture (everything opaque grey).
+    foreach (int size in new[] { 1000, 1800 })
+    {
+        byte[] large = Synthetic(size);
+        byte[] largeResult = SchematicFilter.Apply(large, size, size, new SchematicStyle());
+        int transparent = 0, total = size * size;
+        for (int i = 3; i < largeResult.Length; i += 4) if (largeResult[i] == 0) transparent++;
+        double share = transparent / (double)total;
+        if (share < 0.5) failures.Add($"at {size}x{size} the scenery should stay transparent, but only {share:P0} of the picture is");
+    }
+
     foreach (string failure in failures) Console.Error.WriteLine("FAIL: " + failure);
     Console.WriteLine(failures.Count == 0 ? "selftest passed" : $"{failures.Count} check(s) failed");
     return failures.Count == 0 ? 0 : 1;
