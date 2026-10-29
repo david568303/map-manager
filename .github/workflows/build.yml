@@ -49,9 +49,9 @@ jobs:
       # Map Manager only. It needs the compatibility layer at run time, but that is its own mod with its own release.
       - name: Package
         run: |
-          mkdir -p package/BepInEx/plugins/MapManager
-          cp out/MapManager.dll package/BepInEx/plugins/MapManager/
-          (cd package && zip -r ../MapManager.zip BepInEx)
+          mkdir -p package/MapManager
+          cp out/MapManager.dll package/MapManager/
+          (cd package && zip -r ../MapManager.zip MapManager)
 
       - uses: actions/upload-artifact@v4
         with:
@@ -68,4 +68,4 @@ jobs:
           gh release create 0.1-alpha MapManager.zip \
             --target "$GITHUB_SHA" --prerelease \
             --title "Map Manager 0.1-alpha" \
-            --notes "Dev build from $GITHUB_SHA, not yet tested in-game (compiled against stand-in game assemblies). REQUIRES the compatibility layer: https://github.com/david568303/Dro2-compatibility-layer (install its 0.1-alpha release too). Extract MapManager.zip into the game folder (it contains BepInEx/plugins/MapManager/MapManager.dll). Launch, open a custom map preview, then check BepInEx/LogOutput.log for MAPMANAGER_LOADED and MAPMANAGER_PREVIEW_START / MAPMANAGER_PREVIEW_DONE."
+            --notes "Dev build from $GITHUB_SHA, not yet tested in-game. REQUIRES the compatibility layer: https://github.com/david568303/Dro2-compatibility-layer (install its 0.1-alpha release first). Extract MapManager.zip into BepInEx/plugins, launch, open a custom map preview, then check BepInEx/LogOutput.log for MAPMANAGER_LOADED and MAPMANAGER_PREVIEW_START / MAPMANAGER_PREVIEW_DONE."
