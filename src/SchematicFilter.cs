@@ -59,8 +59,6 @@ public static class SchematicFilter
 {
     private const byte Scenery = 0, Asphalt = 1, Concrete = 2;
     private const float GaussianPeak = 2.5066283f; // sqrt(2 * pi)
-    // Where the blurred coverage counts as the shape's edge. Slightly under 0.5 so thin roads survive the smoothing.
-    private const float Contour = 0.45f;
 
     /// <summary>Input and output are tightly packed RGBA, row-major, row 0 first.</summary>
     public static byte[] Apply(byte[] rgba, int width, int height, SchematicStyle? style = null)
@@ -78,7 +76,7 @@ public static class SchematicFilter
         RemoveSmallRegions(cls, width, height, Asphalt | Concrete, Math.Max(24, n / 6000), onlyInterior: true); // holes in roads
 
         double radius = Math.Max(0.0, style.SmoothingPasses * unit);
-        return Render(cls, width, height, style, radius, style.EdgeWidth > 0 ? style.EdgeWidth : Math.Max(1.5, 1.5 * unit));
+        return Render(cls, width, height, style, radius, style.EdgeWidth > 0 ? style.EdgeWidth : Math.Max(2.4, 1.6 * unit));
     }
 
     // ---- 1. classification -------------------------------------------------------------------------------------
@@ -183,24 +181,49 @@ public static class SchematicFilter
         int n = width * height;
         var asphalt = new float[n];
         var concrete = new float[n];
+        var surface = new float[n];
         Parallel.For(0, height, y =>
         {
             for (int i = y * width, end = i + width; i < end; i++)
             {
                 asphalt[i] = cls[i] == Asphalt ? 1f : 0f;
                 concrete[i] = cls[i] == Concrete ? 1f : 0f;
+                surface[i] = cls[i] != Scenery ? 1f : 0f;
             }
         });
-        // Three box blurs approximate a Gaussian; its width sets how round the outlines get.
-        int boxRadius = (int)Math.Round(radius);
-        double sigma = boxRadius > 0 ? Math.Sqrt(3.0 * ((2.0 * boxRadius + 1) * (2.0 * boxRadius + 1) - 1) / 12.0) : 0.5;
-        if (boxRadius > 0)
+
+        // Two scales. A light blur keeps thin trails and decides asphalt vs concrete. A heavy blur gives wide roads
+        // and buildings their smooth outline, because it averages out the wobble in the source picture's edges.
+        int fine = (int)Math.Round(radius);
+        int heavy = fine > 0 ? fine * 2 + 1 : 0;
+        if (fine > 0)
         {
-            BoxBlur(asphalt, width, height, boxRadius, passes: 3);
-            BoxBlur(concrete, width, height, boxRadius, passes: 3);
+            BoxBlur(asphalt, width, height, fine, passes: 3);
+            BoxBlur(concrete, width, height, fine, passes: 3);
+            BoxBlur(surface, width, height, heavy, passes: 3);
         }
 
-        // Slope of the blurred edge at coverage 0.5, per pixel. It turns "N pixels" into a coverage width.
+        // Shape = wide parts (heavy blur says "mostly road here") plus thin parts (the fine blur sees a road that the
+        // heavy blur smeared away). The difference test keeps the bumps beside a wide road out of the thin set.
+        var shape = new float[n];
+        Parallel.For(0, height, y =>
+        {
+            for (int i = y * width, end = i + width; i < end; i++)
+            {
+                float fineCover = Math.Min(1f, asphalt[i] + concrete[i]);
+                float heavyCover = surface[i];
+                bool wide = heavyCover >= 0.5f;
+                bool thin = fineCover >= 0.45f && fineCover - heavyCover > 0.1f;
+                shape[i] = wide || thin ? 1f : 0f;
+            }
+        });
+        // A last small blur only anti-aliases the (already smooth) outline; it is the same everywhere, so every edge
+        // gets the same crisp width.
+        const int AntiAliasRadius = 1;
+        BoxBlur(shape, width, height, AntiAliasRadius, passes: 2);
+        double sigma = Math.Sqrt(2.0 * ((2.0 * AntiAliasRadius + 1) * (2.0 * AntiAliasRadius + 1) - 1) / 12.0);
+
+        // Slope of the blurred edge at 0.5, per pixel. It turns "N pixels" into a coverage width.
         float slope = (float)(1.0 / (sigma * GaussianPeak));
         float aa = Math.Max(0.5f * slope, 0.02f);                 // anti-aliasing half-width, about one pixel
         float outline = Math.Max(0.5f * (float)edgePixels * slope, aa);
@@ -212,13 +235,13 @@ public static class SchematicFilter
             for (int i = y * width, end = i + width; i < end; i++)
             {
                 float a = asphalt[i], c = concrete[i];
-                float cover = Math.Min(1f, a + c);
-                float concreteShare = cover > 0.001f ? c / (a + c) : 0f;
+                float cover = shape[i];
+                float concreteShare = a + c > 0.001f ? c / (a + c) : 0f;
 
-                float fill = SmoothStep(Contour - aa, Contour + aa, cover);
-                float edge = Math.Clamp(1f - Math.Abs(cover - Contour) / outline, 0f, 1f);
-                float mix = SmoothStep(0.5f - 2 * aa, 0.5f + 2 * aa, concreteShare);
-                float inner = 0.6f * Math.Clamp(1f - Math.Abs(concreteShare - 0.5f) / (2f * outline), 0f, 1f) * SmoothStep(0.6f, 0.9f, cover);
+                float fill = SmoothStep(0.5f - aa, 0.5f + aa, cover);
+                float edge = 1f - SmoothStep(outline * 0.5f, outline, Math.Abs(cover - 0.5f)); // full strength in the core, soft shoulders
+                float mix = SmoothStep(0.5f - 0.2f, 0.5f + 0.2f, concreteShare);
+                float inner = 0.6f * Math.Clamp(1f - Math.Abs(concreteShare - 0.5f) / 0.12f, 0f, 1f) * SmoothStep(0.6f, 0.9f, cover);
                 float visible = Math.Max(fill, edge);
 
                 // Colour: asphalt -> concrete fill, outlined in the matching light colour. Left independent of
